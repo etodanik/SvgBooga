@@ -1,0 +1,29 @@
+{
+  "FileVersion": 3,
+  "Version": 1,
+  "VersionName": "1.0",
+  "FriendlyName": "SvgBooga",
+  "Description": "Import SVG assets into the Unreal Engine editor",
+  "Category": "Other",
+  "CreatedBy": "Daniel Povolotski",
+  "CreatedByURL": "https://github.com/etodanik",
+  "DocsURL": "https://github.com/etodanik/SvgBooga/wiki",
+  "MarketplaceURL": "",
+  "SupportURL": "https://github.com/etodanik/SvgBooga/issues",
+  "CanContainContent": true,
+  "IsBetaVersion": false,
+  "IsExperimentalVersion": false,
+  "Installed": true,
+  "Modules": [
+    {
+      "Name": "SvgBooga",
+      "Type": "Runtime",
+      "LoadingPhase": "Default"
+    },
+    {
+      "Name": "SvgBoogaEditor",
+      "Type": "Editor",
+      "LoadingPhase": "PostEngineInit"
+    }
+  ]
+}
