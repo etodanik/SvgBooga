@@ -1,7 +1,9 @@
 ﻿#include "SvgTexture2D.h"
 
 #include "ImageUtils.h"
+#if WITH_EDITOR
 #include "LunaSvg/lunasvg.h"
+#endif
 #include "Engine/Texture2D.h"
 #include "RenderUtils.h"
 
@@ -19,12 +21,15 @@ uint32 ConvertFLinearColorToInteger(const FLinearColor& Color)
 USvgTexture2D::USvgTexture2D(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
-	Texture = ObjectInitializer.CreateDefaultSubobject<UTexture2D>(this, TEXT("Texture"));
+	// Texture = ObjectInitializer.CreateDefaultSubobject<UTexture2D>(this, TEXT("Texture"));
+	ScaledImage = MakeShareable<FImage>(new FImage());
 }
 
+#if WITH_EDITOR
 bool USvgTexture2D::UpdateTextureFromSvg(const FString& SvgFilePath, const int TextureWidth, const int TextureHeight,
-                                         const FLinearColor BackgroundColor = FLinearColor::Transparent)
+                                         const FLinearColor InBackgroundColor = FLinearColor::Transparent)
 {
+	BackgroundColor = InBackgroundColor;
 	const std::unique_ptr<lunasvg::Document> Document = lunasvg::Document::loadFromFile(TCHAR_TO_UTF8(*SvgFilePath));
 	if (!Document)
 	{
@@ -70,17 +75,17 @@ TSharedPtr<FImage> USvgTexture2D::ConvertBitmapToImage(const lunasvg::Bitmap& Bi
 		return Image;
 	}
 
-	const uint32 Width = Bitmap.width();
-	const uint32 Height = Bitmap.height();
+	const uint32 BitmapWidth = Bitmap.width();
+	const uint32 BitmapHeight = Bitmap.height();
 	const uint32 Stride = Bitmap.stride();
 
-	Image->Init(Width, Height, ERawImageFormat::BGRA8, EGammaSpace::Linear);
+	Image->Init(BitmapWidth, BitmapHeight, ERawImageFormat::BGRA8, EGammaSpace::sRGB);
 	const uint8* BitmapData = Bitmap.data();
 
 	// We're converting lunasvg ARGB32 Premultiplied to BGRA8
-	for (uint32 Y = 0; Y < Height; ++Y)
+	for (uint32 Y = 0; Y < BitmapHeight; ++Y)
 	{
-		for (uint32 X = 0; X < Width; ++X)
+		for (uint32 X = 0; X < BitmapWidth; ++X)
 		{
 			const uint32 PixelIndex = Y * Stride + X * 4;
 			const uint8 A = BitmapData[PixelIndex + 3];
@@ -88,7 +93,7 @@ TSharedPtr<FImage> USvgTexture2D::ConvertBitmapToImage(const lunasvg::Bitmap& Bi
 			const uint8 G = BitmapData[PixelIndex + 1];
 			const uint8 B = BitmapData[PixelIndex + 0];
 
-			const uint32 DestIndex = (Y * Width + X) * 4;
+			const uint32 DestIndex = (Y * BitmapWidth + X) * 4;
 			Image->RawData[DestIndex + 0] = B;
 			Image->RawData[DestIndex + 1] = G;
 			Image->RawData[DestIndex + 2] = R;
@@ -114,70 +119,23 @@ void USvgTexture2D::UpdateTextureFromImage(const TSharedPtr<FImage>& SourceImage
 		return;
 	}
 
-	if (!Texture)
-	{
-		UE_LOG(LogTemp, Error, TEXT("Texture is not initialized."));
-		return;
-	}
-
-	FImage ScaledImage;
-	ScaledImage.Init(TextureWidth, TextureHeight, SourceImage->Format, SourceImage->GammaSpace);
+	ScaledImage = MakeShared<FImage>();
+	ScaledImage->Init(TextureWidth, TextureHeight, SourceImage->Format, SourceImage->GammaSpace);
 	FImageUtils::ImageResize(SourceImage->SizeX, SourceImage->SizeY, SourceImage->AsBGRA8(), TextureWidth,
 	                         TextureHeight,
-	                         ScaledImage.AsBGRA8(), true, false);
-
-	FTexturePlatformData* PlatformData = Texture->GetPlatformData();
-	if (!PlatformData || PlatformData->SizeX != TextureWidth || PlatformData->SizeY != TextureHeight)
+	                         ScaledImage->AsBGRA8(), false, false);
+	if (Texture)
 	{
-		PlatformData = new FTexturePlatformData();
-		PlatformData->SizeX = TextureWidth;
-		PlatformData->SizeY = TextureHeight;
-		PlatformData->PixelFormat = PF_B8G8R8A8;
-
-		FTexture2DMipMap* NewMip = new FTexture2DMipMap();
-		NewMip->SizeX = TextureWidth;
-		NewMip->SizeY = TextureHeight;
-		PlatformData->Mips.Add(NewMip);
-
-		Texture->SetPlatformData(PlatformData);
+		Texture->Rename(TEXT("TextureGarbage"));
+		Texture->MarkAsGarbage();
+		Texture->RemoveFromRoot();
+		Texture->ReleaseResource();
+		Texture = nullptr;
+		GEngine->ForceGarbageCollection(true);
 	}
 
-	if (PlatformData->Mips.Num() == 0)
-	{
-		UE_LOG(LogTemp, Error, TEXT("Texture has no mipmaps."));
-		return;
-	}
-
-	FTexture2DMipMap& Mip = PlatformData->Mips[0];
-
-	if (Mip.BulkData.IsLocked())
-	{
-		UE_LOG(LogTemp, Warning, TEXT("BulkData is already locked."));
-		return;
-	}
-
-	Mip.BulkData.Lock(LOCK_READ_WRITE);
-	Mip.BulkData.Realloc(TextureWidth * TextureHeight * 4);
-	Mip.BulkData.Unlock();
-
-	if (void* MipData = Mip.BulkData.Lock(LOCK_READ_WRITE))
-	{
-		Mip.BulkData.Realloc(TextureWidth * TextureHeight * 4);
-		FMemory::Memcpy(MipData, ScaledImage.RawData.GetData(), ScaledImage.RawData.Num());
-		Mip.BulkData.Unlock();
-
-		// TODO: Investigate if this can be made redundant
-		Texture->Source.Init(TextureWidth, TextureHeight, 1, 1, TSF_BGRA8, ScaledImage.RawData.GetData());
-
-		// TODO: Investigate how to do this properly. Right now if I don't set this to nullptr, I can't save the texture due to a link to AssetImportData
-		Texture->AssetImportData = nullptr;
-	}
-	else
-	{
-		UE_LOG(LogTemp, Error, TEXT("Failed to lock MipMap data for writing."));
-		return;
-	}
-
+	Texture = FImageUtils::CreateTexture2DFromImage(*ScaledImage);
+	Texture->Rename(TEXT("Texture"), this);
 	Texture->UpdateResource();
 }
 
@@ -187,23 +145,43 @@ void USvgTexture2D::UpdateTextureFromBitmap(const lunasvg::Bitmap& Bitmap, const
 {
 	return UpdateTextureFromImage(ConvertBitmapToImage(Bitmap), TextureWidth, TextureHeight);
 }
-
+#endif
 
 void USvgTexture2D::Serialize(FArchive& Ar)
 {
 	Super::Serialize(Ar);
 
-	if (Ar.IsSaving() || Ar.IsLoading())
-	{
-		if (Texture)
-		{
-			Texture->Serialize(Ar);
-		}
+	Ar << OriginalWidth;
+	Ar << OriginalHeight;
+	Ar << ImportPath;
+	Ar << AspectRatio;
+	Ar << Width;
+	Ar << Height;
+	Ar << BackgroundColor;
+	Ar << ScaledImage->SizeX;
+	Ar << ScaledImage->SizeY;
+	Ar << ScaledImage->NumSlices;
 
-		Ar << OriginalWidth;
-		Ar << OriginalHeight;
-		Ar << ImportPath;
-		Ar << AspectRatio;
+	if (Ar.IsSaving())
+	{
+		int32 FormatInt = ScaledImage->Format;
+		Ar << FormatInt;
+	}
+	if (Ar.IsLoading())
+	{
+		int32 FormatInt;
+		Ar << FormatInt;
+		ScaledImage->Format = static_cast<ERawImageFormat::Type>(FormatInt);
+	}
+
+	Ar << ScaledImage->GammaSpace;
+	Ar << ScaledImage->RawData;
+
+	if (Ar.IsLoading())
+	{
+		Texture = FImageUtils::CreateTexture2DFromImage(*ScaledImage);
+		Texture->Rename(TEXT("Texture"), this);
+		Texture->UpdateResource();
 	}
 }
 

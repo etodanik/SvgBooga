@@ -4,6 +4,7 @@
 #include "UObject/ObjectMacros.h"
 #include "UObject/Object.h"
 #include "Engine/Texture2D.h"
+#include "Templates/SharedPointer.h"
 #include "SvgTexture2D.generated.h"
 
 namespace lunasvg
@@ -19,8 +20,10 @@ class SVGBOOGA_API USvgTexture2D : public UObject
 public:
 	USvgTexture2D(const FObjectInitializer& ObjectInitializer);
 
+#if WITH_EDITOR
 	bool UpdateTextureFromSvg(const FString& SvgFilePath, const int TextureWidth, const int TextureHeight,
-	                          const FLinearColor BackgroundColor);
+	                          const FLinearColor InBackgroundColor);
+#endif
 
 	UFUNCTION(BlueprintCallable, Category = "SVG")
 	UTexture2D* GetTexture() const;
@@ -44,6 +47,15 @@ protected:
 	UPROPERTY(VisibleAnywhere, Category = "SVG")
 	UTexture2D* Texture;
 
+	TSharedPtr<FImage> ScaledImage;
+	FLinearColor BackgroundColor;
+
+	UPROPERTY(VisibleAnywhere, Category = "Import Settings")
+	int32 Width;
+
+	UPROPERTY(VisibleAnywhere, Category = "Import Settings")
+	int32 Height;
+
 	UPROPERTY(VisibleAnywhere, Category = "Import Settings")
 	FString ImportPath;
 
@@ -56,8 +68,11 @@ protected:
 	UPROPERTY(VisibleAnywhere, Category = "SVG")
 	float AspectRatio;
 
+#if WITH_EDITOR
 	TSharedPtr<FImage> ConvertBitmapToImage(const lunasvg::Bitmap& Bitmap);
 	void UpdateTextureFromImage(const TSharedPtr<FImage>& SourceImage, const int TextureWidth, const int TextureHeight);
 	void UpdateTextureFromBitmap(const lunasvg::Bitmap& Bitmap, const int TextureWidth, const int TextureHeight);
+#endif
+
 	virtual void Serialize(FArchive& Ar) override;
 };
