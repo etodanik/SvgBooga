@@ -20,7 +20,7 @@ public:
 	USvgTexture2D(const FObjectInitializer& ObjectInitializer);
 
 
-	bool UpdateTextureFromSvg(const FString& SvgFilePath, int Width, int Height);
+	bool UpdateTextureFromSvg(const FString& SvgFilePath, const int TextureWidth, const int TextureHeight);
 
 	UFUNCTION(BlueprintCallable, Category = "SVG")
 	UTexture2D* GetTexture() const;
@@ -56,6 +56,8 @@ protected:
 	UPROPERTY(VisibleAnywhere, Category = "SVG")
 	float AspectRatio;
 
-	void UpdateTextureFromBitmap(const lunasvg::Bitmap& Bitmap);
+	TSharedPtr<FImage> ConvertBitmapToImage(const lunasvg::Bitmap& Bitmap);
+	void UpdateTextureFromImage(const TSharedPtr<FImage>& SourceImage, const int TextureWidth, const int TextureHeight);
+	void UpdateTextureFromBitmap(const lunasvg::Bitmap& Bitmap, const int TextureWidth, const int TextureHeight);
 	virtual void Serialize(FArchive& Ar) override;
 };

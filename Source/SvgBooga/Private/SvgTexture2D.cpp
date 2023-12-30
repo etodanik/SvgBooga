@@ -1,4 +1,6 @@
 ﻿#include "SvgTexture2D.h"
+
+#include "ImageUtils.h"
 #include "LunaSvg/lunasvg.h"
 #include "Engine/Texture2D.h"
 #include "RenderUtils.h"
@@ -9,42 +11,93 @@ USvgTexture2D::USvgTexture2D(const FObjectInitializer& ObjectInitializer)
 	Texture = ObjectInitializer.CreateDefaultSubobject<UTexture2D>(this, TEXT("Texture"));
 }
 
-bool USvgTexture2D::UpdateTextureFromSvg(const FString& SvgFilePath, int width, int height)
+bool USvgTexture2D::UpdateTextureFromSvg(const FString& SvgFilePath, const int TextureWidth, const int TextureHeight)
 {
-	const std::unique_ptr<lunasvg::Document> document = lunasvg::Document::loadFromFile(TCHAR_TO_UTF8(*SvgFilePath));
-	if (!document)
+	const std::unique_ptr<lunasvg::Document> Document = lunasvg::Document::loadFromFile(TCHAR_TO_UTF8(*SvgFilePath));
+	if (!Document)
 	{
 		UE_LOG(LogTemp, Error, TEXT("Failed to load SVG file: %s"), *SvgFilePath);
 		return false;
 	}
 
 	ImportPath = SvgFilePath;
-	OriginalWidth = document->width();
-	OriginalHeight = document->height();
+	OriginalWidth = Document->width();
+	OriginalHeight = Document->height();
 	AspectRatio = static_cast<float>(OriginalWidth) / OriginalHeight;
+	const float TargetAspectRatio = static_cast<float>(TextureWidth) / TextureHeight;
 
-	const lunasvg::Bitmap bitmap = document->renderToBitmap(width, height);
-	if (!bitmap.valid())
+	int RenderWidth, RenderHeight;
+	if (AspectRatio >= TargetAspectRatio)
+	{
+		RenderHeight = TextureHeight;
+		RenderWidth = static_cast<int>(TextureHeight * AspectRatio);
+	}
+	else
+	{
+		RenderWidth = TextureWidth;
+		RenderHeight = static_cast<int>(TextureWidth / AspectRatio);
+	}
+
+	const lunasvg::Bitmap Bitmap = Document->renderToBitmap(RenderWidth, RenderHeight);
+	if (!Bitmap.valid())
 	{
 		UE_LOG(LogTemp, Error, TEXT("Failed to render SVG to bitmap."));
 		return false;
 	}
 
-	UpdateTextureFromBitmap(bitmap);
+	UpdateTextureFromBitmap(Bitmap, TextureWidth, TextureHeight);
 	return true;
 }
 
-void USvgTexture2D::UpdateTextureFromBitmap(const lunasvg::Bitmap& Bitmap)
+TSharedPtr<FImage> USvgTexture2D::ConvertBitmapToImage(const lunasvg::Bitmap& Bitmap)
 {
+	TSharedPtr<FImage> Image = MakeShared<FImage>();
 	if (!Bitmap.valid())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Invalid Bitmap data."));
+		return Image;
+	}
+
+	const uint32 Width = Bitmap.width();
+	const uint32 Height = Bitmap.height();
+	const uint32 Stride = Bitmap.stride();
+
+	Image->Init(Width, Height, ERawImageFormat::BGRA8, EGammaSpace::Linear);
+	const uint8* BitmapData = Bitmap.data();
+
+	// We're converting lunasvg ARGB32 Premultiplied to BGRA8
+	for (uint32 Y = 0; Y < Height; ++Y)
+	{
+		for (uint32 X = 0; X < Width; ++X)
+		{
+			const uint32 PixelIndex = Y * Stride + X * 4;
+			const uint8 A = BitmapData[PixelIndex + 3];
+			const uint8 R = BitmapData[PixelIndex + 2];
+			const uint8 G = BitmapData[PixelIndex + 1];
+			const uint8 B = BitmapData[PixelIndex + 0];
+
+			const uint32 DestIndex = (Y * Width + X) * 4;
+			Image->RawData[DestIndex + 0] = B;
+			Image->RawData[DestIndex + 1] = G;
+			Image->RawData[DestIndex + 2] = R;
+			Image->RawData[DestIndex + 3] = A;
+		}
+	}
+
+	return Image;
+}
+
+void USvgTexture2D::UpdateTextureFromImage(const TSharedPtr<FImage>& SourceImage, const int TextureWidth,
+                                           const int TextureHeight)
+{
+	if (!IsInGameThread())
+	{
+		UE_LOG(LogTemp, Error, TEXT("UpdateTextureFromImage must be called on the game thread."));
 		return;
 	}
 
-	if (!IsInGameThread())
+	if (!SourceImage)
 	{
-		UE_LOG(LogTemp, Error, TEXT("UpdateTextureFromBitmap must be called on the game thread."));
+		UE_LOG(LogTemp, Error, TEXT("SourceImage is not valid."));
 		return;
 	}
 
@@ -54,17 +107,23 @@ void USvgTexture2D::UpdateTextureFromBitmap(const lunasvg::Bitmap& Bitmap)
 		return;
 	}
 
+	FImage ScaledImage;
+	ScaledImage.Init(TextureWidth, TextureHeight, SourceImage->Format, SourceImage->GammaSpace);
+	FImageUtils::ImageResize(SourceImage->SizeX, SourceImage->SizeY, SourceImage->AsBGRA8(), TextureWidth,
+	                         TextureHeight,
+	                         ScaledImage.AsBGRA8(), true);
+
 	FTexturePlatformData* PlatformData = Texture->GetPlatformData();
-	if (!PlatformData || PlatformData->SizeX != Bitmap.width() || PlatformData->SizeY != Bitmap.height())
+	if (!PlatformData || PlatformData->SizeX != TextureWidth || PlatformData->SizeY != TextureHeight)
 	{
 		PlatformData = new FTexturePlatformData();
-		PlatformData->SizeX = Bitmap.width();
-		PlatformData->SizeY = Bitmap.height();
+		PlatformData->SizeX = TextureWidth;
+		PlatformData->SizeY = TextureHeight;
 		PlatformData->PixelFormat = PF_B8G8R8A8;
 
 		FTexture2DMipMap* NewMip = new FTexture2DMipMap();
-		NewMip->SizeX = Bitmap.width();
-		NewMip->SizeY = Bitmap.height();
+		NewMip->SizeX = TextureWidth;
+		NewMip->SizeY = TextureHeight;
 		PlatformData->Mips.Add(NewMip);
 
 		Texture->SetPlatformData(PlatformData);
@@ -85,33 +144,37 @@ void USvgTexture2D::UpdateTextureFromBitmap(const lunasvg::Bitmap& Bitmap)
 	}
 
 	Mip.BulkData.Lock(LOCK_READ_WRITE);
-	Mip.BulkData.Realloc(Bitmap.width() * Bitmap.height() * 4);
+	Mip.BulkData.Realloc(TextureWidth * TextureHeight * 4);
 	Mip.BulkData.Unlock();
 
-	void* Data = Mip.BulkData.Lock(LOCK_READ_WRITE);
-	if (!Data)
+	if (void* MipData = Mip.BulkData.Lock(LOCK_READ_WRITE))
+	{
+		Mip.BulkData.Realloc(TextureWidth * TextureHeight * 4);
+		FMemory::Memcpy(MipData, ScaledImage.RawData.GetData(), ScaledImage.RawData.Num());
+		Mip.BulkData.Unlock();
+
+		// TODO: Investigate if this can be made redundant
+		Texture->Source.Init(TextureWidth, TextureHeight, 1, 1, TSF_BGRA8, ScaledImage.RawData.GetData());
+
+		// TODO: Investigate how to do this properly. Right now if I don't set this to nullptr, I can't save the texture due to a link to AssetImportData
+		Texture->AssetImportData = nullptr;
+	}
+	else
 	{
 		UE_LOG(LogTemp, Error, TEXT("Failed to lock MipMap data for writing."));
 		return;
 	}
 
-	const int32 Stride = Bitmap.width() * 4;
-	for (uint32 y = 0; y < Bitmap.height(); ++y)
-	{
-		uint32* DestPtr = reinterpret_cast<uint32*>(static_cast<uint8*>(Data) + y * Stride);
-		const uint32* SrcPtr = reinterpret_cast<const uint32*>(Bitmap.data() + y * Bitmap.stride());
-		for (uint32 x = 0; x < Bitmap.width(); ++x)
-		{
-			const uint32 Pixel = SrcPtr[x];
-			DestPtr[x] = Pixel & 0xFF00FF00 | (Pixel & 0xFF0000) >> 16 | (Pixel & 0xFF) << 16;
-		}
-	}
-
-	Mip.BulkData.Unlock();
-	Texture->Source.Init(Bitmap.width(), Bitmap.height(), 1, 1, TSF_BGRA8, Bitmap.data());
-	Texture->AssetImportData = nullptr;
 	Texture->UpdateResource();
 }
+
+
+void USvgTexture2D::UpdateTextureFromBitmap(const lunasvg::Bitmap& Bitmap, const int TextureWidth,
+                                            const int TextureHeight)
+{
+	return UpdateTextureFromImage(ConvertBitmapToImage(Bitmap), TextureWidth, TextureHeight);
+}
+
 
 void USvgTexture2D::Serialize(FArchive& Ar)
 {
