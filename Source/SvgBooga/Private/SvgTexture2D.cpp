@@ -101,12 +101,6 @@ void USvgTexture2D::UpdateTextureFromImage(const TSharedPtr<FImage>& SourceImage
 		return;
 	}
 
-	if (!Texture)
-	{
-		UE_LOG(LogTemp, Error, TEXT("Texture is not initialized."));
-		return;
-	}
-
 	FImage ScaledImage;
 	ScaledImage.Init(TextureWidth, TextureHeight, SourceImage->Format, SourceImage->GammaSpace);
 	FImageUtils::ImageResize(SourceImage->SizeX, SourceImage->SizeY, SourceImage->AsBGRA8(), TextureWidth,
