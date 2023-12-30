@@ -27,7 +27,8 @@ public class SvgBoogaEditor : ModuleRules
 				"Slate",
 				"SlateCore",
 				"RenderCore",
-				"SvgBooga"
+				"SvgBooga",
+				"AppFramework"
 			}
 		);
 	}

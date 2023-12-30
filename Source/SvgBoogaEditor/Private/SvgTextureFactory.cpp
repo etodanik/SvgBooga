@@ -4,6 +4,8 @@
 #include "SvgTexture2D.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Subsystems/AssetEditorSubsystem.h"
+#include "Widgets/Colors/SColorBlock.h"
+#include "Widgets/Colors/SColorPicker.h"
 
 USvgTextureFactory::USvgTextureFactory()
 {
@@ -38,7 +40,8 @@ UObject* USvgTextureFactory::FactoryCreateFile(UClass* InClass, UObject* InParen
 
 	USvgTexture2D* NewTexture = NewObject<USvgTexture2D>(InParent, InClass, InName, Flags);
 
-	if (NewTexture->UpdateTextureFromSvg(Filename, ImportOptions->Width, ImportOptions->Height))
+	if (NewTexture->UpdateTextureFromSvg(Filename, ImportOptions->Width, ImportOptions->Height,
+	                                     ImportOptions->BackgroundColor))
 	{
 		FAssetRegistryModule::AssetCreated(NewTexture);
 		NewTexture->MarkPackageDirty();
@@ -101,13 +104,13 @@ bool USvgTextureFactory::ShowImportOptions(USvgImportOptions*& OutImportOptions,
 		SNew(SVerticalBox)
 		+ SVerticalBox::Slot()
 		  .AutoHeight()
-		  .Padding(2)
+		  .Padding(8, 2, 8, 2)
 		[
 			SNew(STextBlock).Text(FText::FromString("Size:"))
 		]
 		+ SVerticalBox::Slot()
 		  .AutoHeight()
-		  .Padding(2)
+		  .Padding(8, 2, 8, 4)
 		[
 			SAssignNew(SizeComboBox, SComboBox<TSharedPtr<FString>>)
 	.OptionsSource(&SizeOptions)
@@ -148,8 +151,37 @@ bool USvgTextureFactory::ShowImportOptions(USvgImportOptions*& OutImportOptions,
 		]
 		+ SVerticalBox::Slot()
 		  .AutoHeight()
-		  .HAlign(HAlign_Right)
-		  .Padding(2)
+		  .Padding(8, 2, 8, 2)
+		[
+			SNew(STextBlock).Text(FText::FromString("Background Color:"))
+		]
+		+ SVerticalBox::Slot()
+		  .AutoHeight()
+		  .Padding(8, 2, 8, 2)
+		[
+			SNew(SColorBlock)
+			.Color(OutImportOptions->BackgroundColor)
+			.Size(FVector2D(100, 30))
+			.ShowBackgroundForAlpha(true)
+			.OnMouseButtonDown_Lambda([&OutImportOptions](const FGeometry&, const FPointerEvent&)
+			                 {
+				                 FColorPickerArgs PickerArgs;
+				                 PickerArgs.bIsModal = true;
+				                 PickerArgs.OnColorCommitted = FOnLinearColorValueChanged::CreateLambda(
+					                 [&OutImportOptions](const FLinearColor& NewColor)
+					                 {
+						                 OutImportOptions->BackgroundColor = NewColor;
+						                 // Update your variable when color changes
+					                 });
+				                 PickerArgs.InitialColor = OutImportOptions->BackgroundColor;
+				                 PickerArgs.ParentWidget = SNew(SColorPicker);
+				                 OpenColorPicker(PickerArgs);
+				                 return FReply::Handled();
+			                 })
+		] + SVerticalBox::Slot()
+		    .AutoHeight()
+		    .HAlign(HAlign_Right)
+		    .Padding(8, 8, 8, 2)
 		[
 			SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot()
@@ -232,7 +264,8 @@ EReimportResult::Type USvgTextureFactory::Reimport(UObject* Obj)
 		return EReimportResult::Cancelled;
 	}
 
-	if (SvgTexture->UpdateTextureFromSvg(Filename, ImportOptions->Width, ImportOptions->Height))
+	if (SvgTexture->UpdateTextureFromSvg(Filename, ImportOptions->Width, ImportOptions->Height,
+	                                     ImportOptions->BackgroundColor))
 	{
 		return EReimportResult::Succeeded;
 	}

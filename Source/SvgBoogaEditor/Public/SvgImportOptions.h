@@ -15,4 +15,7 @@ public:
 
 	UPROPERTY(EditAnywhere, Category = "SVG Import")
 	int32 Height = 512;
+
+	UPROPERTY(EditAnywhere, Category = "SVG Import")
+	FLinearColor BackgroundColor = FLinearColor::Transparent;
 };

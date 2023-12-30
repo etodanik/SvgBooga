@@ -19,8 +19,8 @@ class SVGBOOGA_API USvgTexture2D : public UObject
 public:
 	USvgTexture2D(const FObjectInitializer& ObjectInitializer);
 
-
-	bool UpdateTextureFromSvg(const FString& SvgFilePath, const int TextureWidth, const int TextureHeight);
+	bool UpdateTextureFromSvg(const FString& SvgFilePath, const int TextureWidth, const int TextureHeight,
+	                          const FLinearColor BackgroundColor);
 
 	UFUNCTION(BlueprintCallable, Category = "SVG")
 	UTexture2D* GetTexture() const;

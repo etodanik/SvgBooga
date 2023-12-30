@@ -5,13 +5,25 @@
 #include "Engine/Texture2D.h"
 #include "RenderUtils.h"
 
+uint32 ConvertFLinearColorToInteger(const FLinearColor& Color)
+{
+	const uint8 R = static_cast<uint8>(FMath::Clamp(Color.R * 255.0f, 0.0f, 255.0f));
+	const uint8 G = static_cast<uint8>(FMath::Clamp(Color.G * 255.0f, 0.0f, 255.0f));
+	const uint8 B = static_cast<uint8>(FMath::Clamp(Color.B * 255.0f, 0.0f, 255.0f));
+	const uint8 A = static_cast<uint8>(FMath::Clamp(Color.A * 255.0f, 0.0f, 255.0f));
+
+	return static_cast<uint32>(R) << 24 | static_cast<uint32>(G) << 16 | static_cast<uint32>(B) << 8 | static_cast<
+		uint32>(A);
+}
+
 USvgTexture2D::USvgTexture2D(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
 	Texture = ObjectInitializer.CreateDefaultSubobject<UTexture2D>(this, TEXT("Texture"));
 }
 
-bool USvgTexture2D::UpdateTextureFromSvg(const FString& SvgFilePath, const int TextureWidth, const int TextureHeight)
+bool USvgTexture2D::UpdateTextureFromSvg(const FString& SvgFilePath, const int TextureWidth, const int TextureHeight,
+                                         const FLinearColor BackgroundColor = FLinearColor::Transparent)
 {
 	const std::unique_ptr<lunasvg::Document> Document = lunasvg::Document::loadFromFile(TCHAR_TO_UTF8(*SvgFilePath));
 	if (!Document)
@@ -38,7 +50,8 @@ bool USvgTexture2D::UpdateTextureFromSvg(const FString& SvgFilePath, const int T
 		RenderHeight = static_cast<int>(TextureWidth / AspectRatio);
 	}
 
-	const lunasvg::Bitmap Bitmap = Document->renderToBitmap(RenderWidth, RenderHeight);
+	const lunasvg::Bitmap Bitmap = Document->renderToBitmap(RenderWidth, RenderHeight,
+	                                                        ConvertFLinearColorToInteger(BackgroundColor));
 	if (!Bitmap.valid())
 	{
 		UE_LOG(LogTemp, Error, TEXT("Failed to render SVG to bitmap."));
