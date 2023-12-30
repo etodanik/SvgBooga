@@ -111,61 +111,9 @@ void USvgTexture2D::UpdateTextureFromImage(const TSharedPtr<FImage>& SourceImage
 	ScaledImage.Init(TextureWidth, TextureHeight, SourceImage->Format, SourceImage->GammaSpace);
 	FImageUtils::ImageResize(SourceImage->SizeX, SourceImage->SizeY, SourceImage->AsBGRA8(), TextureWidth,
 	                         TextureHeight,
-	                         ScaledImage.AsBGRA8(), true);
+	                         ScaledImage.AsBGRA8(), true, false);
 
-	FTexturePlatformData* PlatformData = Texture->GetPlatformData();
-	if (!PlatformData || PlatformData->SizeX != TextureWidth || PlatformData->SizeY != TextureHeight)
-	{
-		PlatformData = new FTexturePlatformData();
-		PlatformData->SizeX = TextureWidth;
-		PlatformData->SizeY = TextureHeight;
-		PlatformData->PixelFormat = PF_B8G8R8A8;
-
-		FTexture2DMipMap* NewMip = new FTexture2DMipMap();
-		NewMip->SizeX = TextureWidth;
-		NewMip->SizeY = TextureHeight;
-		PlatformData->Mips.Add(NewMip);
-
-		Texture->SetPlatformData(PlatformData);
-	}
-
-	if (PlatformData->Mips.Num() == 0)
-	{
-		UE_LOG(LogTemp, Error, TEXT("Texture has no mipmaps."));
-		return;
-	}
-
-	FTexture2DMipMap& Mip = PlatformData->Mips[0];
-
-	if (Mip.BulkData.IsLocked())
-	{
-		UE_LOG(LogTemp, Warning, TEXT("BulkData is already locked."));
-		return;
-	}
-
-	Mip.BulkData.Lock(LOCK_READ_WRITE);
-	Mip.BulkData.Realloc(TextureWidth * TextureHeight * 4);
-	Mip.BulkData.Unlock();
-
-	if (void* MipData = Mip.BulkData.Lock(LOCK_READ_WRITE))
-	{
-		Mip.BulkData.Realloc(TextureWidth * TextureHeight * 4);
-		FMemory::Memcpy(MipData, ScaledImage.RawData.GetData(), ScaledImage.RawData.Num());
-		Mip.BulkData.Unlock();
-
-		// TODO: Investigate if this can be made redundant
-		Texture->Source.Init(TextureWidth, TextureHeight, 1, 1, TSF_BGRA8, ScaledImage.RawData.GetData());
-
-		// TODO: Investigate how to do this properly. Right now if I don't set this to nullptr, I can't save the texture due to a link to AssetImportData
-		Texture->AssetImportData = nullptr;
-	}
-	else
-	{
-		UE_LOG(LogTemp, Error, TEXT("Failed to lock MipMap data for writing."));
-		return;
-	}
-
-	Texture->UpdateResource();
+	Texture = FImageUtils::CreateTexture2DFromImage(ScaledImage);
 }
 
 
