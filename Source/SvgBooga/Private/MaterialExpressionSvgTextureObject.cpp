@@ -80,9 +80,7 @@ int32 UMaterialExpressionSvgTextureObject::Compile(FMaterialCompiler* Compiler, 
 		return CompilerError(Compiler, TEXT("Requires valid texture initialized on SVG texture asset"));
 	}
 
-	return SamplerType == SAMPLERTYPE_External
-		       ? Compiler->ExternalTexture(Texture)
-		       : Compiler->Texture(Texture, SamplerType);
+	return Compiler->Texture(Texture, SamplerType);
 }
 
 int32 UMaterialExpressionSvgTextureObject::CompilePreview(FMaterialCompiler* Compiler, int32 OutputIndex)
@@ -100,7 +98,7 @@ int32 UMaterialExpressionSvgTextureObject::CompilePreview(FMaterialCompiler* Com
 
 	return Compiler->TextureSample(Compiler->Texture(Texture, SamplerType),
 	                               Compiler->TextureCoordinate(0, false, false),
-	                               UMaterialExpressionTextureBase::GetSamplerTypeForTexture(Texture));
+	                               SAMPLERTYPE_Color);
 }
 
 void UMaterialExpressionSvgTextureObject::GetCaption(TArray<FString>& OutCaptions) const
@@ -112,6 +110,5 @@ uint32 UMaterialExpressionSvgTextureObject::GetOutputType(int32 OutputIndex)
 {
 	return MCT_Texture2D;
 }
-
 
 #endif //WITH_EDITOR

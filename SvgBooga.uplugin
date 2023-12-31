@@ -18,7 +18,7 @@
     {
       "Name": "SvgBooga",
       "Type": "Runtime",
-      "LoadingPhase": "Default"
+      "LoadingPhase": "PreDefault"
     },
     {
       "Name": "SvgBoogaEditor",

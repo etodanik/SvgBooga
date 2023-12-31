@@ -163,7 +163,6 @@ bool USvgTextureFactory::ShowImportOptions(USvgImportOptions*& OutImportOptions,
 			.Color(OutImportOptions->BackgroundColor)
 			.Size(FVector2D(100, 30))
 			.ShowBackgroundForAlpha(true)
-			.UseSRGB(true)
 			.Color_Lambda([&]
 			                 {
 				                 return OutImportOptions->BackgroundColor;

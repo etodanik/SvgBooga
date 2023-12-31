@@ -21,8 +21,8 @@ uint32 ConvertFLinearColorToInteger(const FLinearColor& Color)
 USvgTexture2D::USvgTexture2D(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
-	// Texture = ObjectInitializer.CreateDefaultSubobject<UTexture2D>(this, TEXT("Texture"));
-	ScaledImage = MakeShareable<FImage>(new FImage());
+	UE_LOG(LogTemp, Warning, TEXT("USvgTexture2D(ObjectInitializer)"));
+	Texture = ObjectInitializer.CreateDefaultSubobject<UTexture2D>(this, TEXT("Texture"));
 }
 
 #if WITH_EDITOR
@@ -119,23 +119,71 @@ void USvgTexture2D::UpdateTextureFromImage(const TSharedPtr<FImage>& SourceImage
 		return;
 	}
 
-	ScaledImage = MakeShared<FImage>();
-	ScaledImage->Init(TextureWidth, TextureHeight, SourceImage->Format, SourceImage->GammaSpace);
-	FImageUtils::ImageResize(SourceImage->SizeX, SourceImage->SizeY, SourceImage->AsBGRA8(), TextureWidth,
-	                         TextureHeight,
-	                         ScaledImage->AsBGRA8(), false, false);
-	if (Texture)
+	if (!Texture)
 	{
-		Texture->Rename(TEXT("TextureGarbage"));
-		Texture->MarkAsGarbage();
-		Texture->RemoveFromRoot();
-		Texture->ReleaseResource();
-		Texture = nullptr;
-		GEngine->ForceGarbageCollection(true);
+		UE_LOG(LogTemp, Error, TEXT("Texture is not initialized."));
+		return;
 	}
 
-	Texture = FImageUtils::CreateTexture2DFromImage(*ScaledImage);
-	Texture->Rename(TEXT("Texture"), this);
+
+	FImage ScaledImage;
+	ScaledImage.Init(TextureWidth, TextureHeight, SourceImage->Format, SourceImage->GammaSpace);
+	FImageUtils::ImageResize(SourceImage->SizeX, SourceImage->SizeY, SourceImage->AsBGRA8(), TextureWidth,
+	                         TextureHeight,
+	                         ScaledImage.AsBGRA8(), false, false);
+
+	FTexturePlatformData* PlatformData = Texture->GetPlatformData();
+	if (!PlatformData || PlatformData->SizeX != TextureWidth || PlatformData->SizeY != TextureHeight)
+	{
+		PlatformData = new FTexturePlatformData();
+		PlatformData->SizeX = TextureWidth;
+		PlatformData->SizeY = TextureHeight;
+		PlatformData->PixelFormat = PF_B8G8R8A8;
+
+		FTexture2DMipMap* NewMip = new FTexture2DMipMap();
+		NewMip->SizeX = TextureWidth;
+		NewMip->SizeY = TextureHeight;
+		PlatformData->Mips.Add(NewMip);
+
+		Texture->SetPlatformData(PlatformData);
+	}
+
+	if (PlatformData->Mips.Num() == 0)
+	{
+		UE_LOG(LogTemp, Error, TEXT("Texture has no mipmaps."));
+		return;
+	}
+
+	FTexture2DMipMap& Mip = PlatformData->Mips[0];
+
+	if (Mip.BulkData.IsLocked())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("BulkData is already locked."));
+		return;
+	}
+
+	Mip.BulkData.Lock(LOCK_READ_WRITE);
+	Mip.BulkData.Realloc(TextureWidth * TextureHeight * 4);
+	Mip.BulkData.Unlock();
+
+	if (void* MipData = Mip.BulkData.Lock(LOCK_READ_WRITE))
+	{
+		Mip.BulkData.Realloc(TextureWidth * TextureHeight * 4);
+		FMemory::Memcpy(MipData, ScaledImage.RawData.GetData(), ScaledImage.RawData.Num());
+		Mip.BulkData.Unlock();
+
+		// TODO: Investigate if this can be made redundant
+		Texture->Source.Init(TextureWidth, TextureHeight, 1, 1, TSF_BGRA8, ScaledImage.RawData.GetData());
+
+		// TODO: Investigate how to do this properly. Right now if I don't set this to nullptr, I can't save the texture due to a link to AssetImportData
+		Texture->AssetImportData = nullptr;
+	}
+	else
+	{
+		UE_LOG(LogTemp, Error, TEXT("Failed to lock MipMap data for writing."));
+		return;
+	}
+
 	Texture->UpdateResource();
 }
 
@@ -149,43 +197,21 @@ void USvgTexture2D::UpdateTextureFromBitmap(const lunasvg::Bitmap& Bitmap, const
 
 void USvgTexture2D::Serialize(FArchive& Ar)
 {
+	UE_LOG(LogTemp, Warning, TEXT("USvgTexture2D::Serialize()"));
 	Super::Serialize(Ar);
 
 	Ar << OriginalWidth;
 	Ar << OriginalHeight;
 	Ar << ImportPath;
 	Ar << AspectRatio;
-	Ar << Width;
-	Ar << Height;
 	Ar << BackgroundColor;
-	Ar << ScaledImage->SizeX;
-	Ar << ScaledImage->SizeY;
-	Ar << ScaledImage->NumSlices;
-
-	if (Ar.IsSaving())
-	{
-		int32 FormatInt = ScaledImage->Format;
-		Ar << FormatInt;
-	}
-	if (Ar.IsLoading())
-	{
-		int32 FormatInt;
-		Ar << FormatInt;
-		ScaledImage->Format = static_cast<ERawImageFormat::Type>(FormatInt);
-	}
-
-	Ar << ScaledImage->GammaSpace;
-	Ar << ScaledImage->RawData;
-
-	if (Ar.IsLoading())
-	{
-		Texture = FImageUtils::CreateTexture2DFromImage(*ScaledImage);
-		Texture->Rename(TEXT("Texture"), this);
-		Texture->UpdateResource();
-	}
+	Ar << Texture;
 }
 
-UTexture2D* USvgTexture2D::GetTexture() const { return Texture; }
+UTexture2D* USvgTexture2D::GetTexture()
+{
+	return Texture;
+}
 
 int32 USvgTexture2D::GetOriginalWidth() const { return OriginalWidth; }
 

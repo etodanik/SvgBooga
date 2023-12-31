@@ -26,7 +26,7 @@ public:
 #endif
 
 	UFUNCTION(BlueprintCallable, Category = "SVG")
-	UTexture2D* GetTexture() const;
+	UTexture2D* GetTexture();
 
 	UFUNCTION(BlueprintCallable, Category = "SVG")
 	int32 GetOriginalWidth() const;
@@ -44,17 +44,10 @@ public:
 	float GetAspectRatio();
 
 protected:
-	UPROPERTY(VisibleAnywhere, Category = "SVG")
+	UPROPERTY(VisibleAnywhere, SkipSerialization, Category = "SVG")
 	UTexture2D* Texture;
 
-	TSharedPtr<FImage> ScaledImage;
 	FLinearColor BackgroundColor;
-
-	UPROPERTY(VisibleAnywhere, Category = "Import Settings")
-	int32 Width;
-
-	UPROPERTY(VisibleAnywhere, Category = "Import Settings")
-	int32 Height;
 
 	UPROPERTY(VisibleAnywhere, Category = "Import Settings")
 	FString ImportPath;
@@ -75,4 +68,5 @@ protected:
 #endif
 
 	virtual void Serialize(FArchive& Ar) override;
+	void RecreateTexture();
 };
